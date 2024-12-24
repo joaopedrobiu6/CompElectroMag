@@ -56,13 +56,12 @@ class ParticleTracer:
         s = s0
         S = []
         for i in range(len(t)):
-            if i % 1000 == 0:
-                print(f"Time: {t[i]:.2f}")
-            S.append(s)
-            if method == "RungeKutta4":
-                s, particle_escaped = self.RungeKutta4(t[i], s, h)
-                if particle_escaped == True:
-                    break
+            if i % 4000 == 0:
+                # print(f"Time: {t[i]:.2f}")
+                S.append(s)
+            s, particle_escaped = self.RungeKutta4(t[i], s, h)
+            if particle_escaped == True:
+                break
         return np.array(S)
          
     def save_to_vtk_with_velocity(self, x, y, z, vx, vy, vz):

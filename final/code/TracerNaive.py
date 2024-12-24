@@ -1,9 +1,8 @@
 from methods import ParticleTracer
 import numpy as np
-import matplotlib.pyplot as plt
+import pandas as pd
 from scipy.constants import e, m_e, c, m_p
 import time as time
-import vtk
 
 start = time.time()
 # define the proton and electron species
@@ -27,7 +26,6 @@ c2 = c**2  # Speed of light squared
 Bx_array = []
 By_array = []
 Bz_array = []
-time_array = []
 
 def lorentz_force(t, s):
     # Unpack variables
@@ -43,11 +41,6 @@ def lorentz_force(t, s):
     Bx = 3 * x * z * B_factor
     By = 3 * y * z * B_factor
     Bz = (2 * z**2 - x**2 - y**2) * B_factor
-    
-    time_array.append(t)
-    Bx_array.append(Bx)
-    By_array.append(By)
-    Bz_array.append(Bz)
 
     # Derivatives
     dxdt = vx
@@ -80,7 +73,15 @@ vz0 = v_mod * np.cos(np.radians(pitch_angle))
 initial_conditions = [x0, y0, z0, vx0, vy0, vz0]
 
 # Solve the system using the Runge-Kutta 4th order method
-S = tracer.solve(initial_conditions, [0, 50], "RungeKutta4", 1e-6)
+S = tracer.solve(initial_conditions, [0, 20], "RungeKutta4", 1e-6)
+
+time_array = np.arange(0, 20, 1e-6)[::4000]
+print(f"Time shape: {time_array.shape}")
+print(f"Shape: {S.shape}")
+
+dataframe = pd.DataFrame({'t': time_array, "x": S[:, 0], "y": S[:, 1], "z": S[:, 2], "vx": S[:, 3], "vy": S[:, 4], "vz": S[:, 5]})
+dataframe.to_csv(f"{filename}_{K/e:.1e}_{pitch_angle}.csv", index=False)
+
 tracer.save_to_vtk_with_velocity(S[:, 0]/Re, S[:, 1]/Re, S[:, 2]/Re, S[:, 3]/c, S[:, 4]/c, S[:, 5]/c)
 tracer.save_to_html(S[:, 0]/Re, S[:, 1]/Re, S[:, 2]/Re)
 print(S)
