@@ -6,6 +6,8 @@ import plotly.graph_objects as go
 
 
 Re = 6378137  # Earth radius in meters
+B0 = 3.12e-5  # Magnetic field at the equator in Tesla
+B0_Re3 = B0 * Re**3  # Precompute B0 * Re^3
 """
 Particle Tracer Class
 
@@ -48,18 +50,129 @@ class ParticleTracer:
             print("Particle escaped")
             particle_escaped = True
         return s_new, particle_escaped
-
     
-    def solve(self, s0, t_span, method, h):
+    def Boris(self, t, s, h):
+        """
+        Boris pusher method for advancing particle trajectories in a magnetic field,
+        adapted to the provided notation.
+        
+        Parameters:
+        t (float): Current time
+        s (numpy.ndarray): Current state vector [x, y, z, vx, vy, vz]
+        h (float): Time step
+        
+        Returns:
+        numpy.ndarray: Updated state vector
+        """
+        particle_escaped = False
+        t_ = 0
+        # Extract position and velocity
+        x_k = s[:3]  # Position: [x, y, z]
+        v_k = s[3:]  # Velocity: [vx, vy, vz]
+        
+        # Calculate magnetic field at the particle's position
+        r2 = x_k[0]**2 + x_k[1]**2 + x_k[2]**2
+        r5 = r2**2.5
+        B_factor = -B0_Re3 / r5 
+        # B_factor = B_factor * (1 + np.random.randint(-20, 20))
+        B_k = np.array([
+            3 * x_k[0] * x_k[2] * B_factor,
+            3 * x_k[1] * x_k[2] * B_factor,
+            (2 * x_k[2]**2 - x_k[0]**2 - x_k[1]**2) * B_factor
+        ])
+        
+        # Assume no electric field (E_k = 0)
+        E_k = np.zeros(3)
+        
+        # Precompute constants
+        q_prime = h * self.qm_ratio/2  # q' = Δt * (q / 2m)
+        h_vec = q_prime * B_k        # h = q' * B_k
+        h_mag2 = np.dot(h_vec, h_vec)
+        s_vec = 2 * h_vec / (1 + h_mag2)  # s = 2h / (1 + h^2)
+        
+        # Half-step velocity update due to E field
+        v_minus = v_k + q_prime * E_k  # u = v_k-1/2 + q'E_k
+        
+        # Rotate velocity in the magnetic field
+        v_prime = v_minus + np.cross(v_minus, h_vec)  # u' = u + (u × h)
+        v_plus = v_minus + np.cross(v_prime, s_vec)   # u' = u' + (u' × s)
+        
+        # Full-step velocity update due to E field
+        v_k_plus_half = v_plus + q_prime * E_k  # v_k+1/2 = u' + q'E_k
+        
+        # Position update
+        x_k_plus_one = x_k + h * v_k_plus_half  # x_k+1 = x_k + Δt * v_k+1/2
+        
+        # Check for particle escape
+        if np.sqrt(x_k_plus_one[0]**2 + x_k_plus_one[1]**2 + x_k_plus_one[2]**2) > 5 * Re:
+            print("Particle escaped")
+            particle_escaped = True
+            
+        t_ = t_ + h
+        
+        # Return the updated state vector
+        return np.concatenate((x_k_plus_one, v_k_plus_half)), particle_escaped
+
+    def LeapFrog(self, t, s, h):
+        particle_escaped = False
+
+        # Extract position and velocity
+        x_k = s[:3]  # Position: [x, y, z]
+        v_k = s[3:]  # Velocity: [vx, vy, vz]
+
+        r2 = x_k[0]**2 + x_k[1]**2 + x_k[2]**2
+        r5 = r2**2.5
+        B_factor = -B0_Re3 / r5
+        B_k = np.array([
+            3 * x_k[0] * x_k[2] * B_factor,
+            3 * x_k[1] * x_k[2] * B_factor,
+            (2 * x_k[2]**2 - x_k[0]**2 - x_k[1]**2) * B_factor
+        ])
+        
+        d = v_k + self.qm_ratio*(h/2)*np.cross(v_k, B_k)
+        x_k_plus_one = x_k + h*d
+        B_k_plus_one = np.array([
+            3 * x_k_plus_one[0] * x_k_plus_one[2] * B_factor,
+            3 * x_k_plus_one[1] * x_k_plus_one[2] * B_factor,
+            (2 * x_k_plus_one[2]**2 - x_k_plus_one[0]**2 - x_k_plus_one[1]**2) * B_factor
+        ])
+        
+        v_k_plus_one = (1/(1 + (self.qm_ratio*h/2)**2 * np.dot(B_k_plus_one, B_k_plus_one))) * (d + self.qm_ratio*(h/2)*np.cross(d, B_k_plus_one) + (self.qm_ratio*h/2)**2 * np.dot(d, B_k_plus_one)*B_k_plus_one)
+ 
+        if np.sqrt(x_k_plus_one[0]**2 + x_k_plus_one[1]**2 + x_k_plus_one[2]**2) > 5*Re:
+            print("Particle escaped")
+            particle_escaped = True
+            
+        return np.concatenate((x_k_plus_one, v_k_plus_one)), particle_escaped       
+        
+        
+
+    def solve(self, s0, t_span, method, h, dump=4000):
+        """
+        Solve the system of differential equations using the specified method.
+        
+        Parameters:
+            s0 (numpy array): Initial state [x, y, z, vx, vy, vz]
+            t_span (list): Time span [t0, tf]
+            method (str): "RungeKutta4", "Boris", "LeapFrog"
+            h (float): Time step
+            dump (int): Number of steps to skip between saved states
+        """
         t0, tf = t_span
         t = np.arange(t0, tf, h)
         s = s0
         S = []
         for i in range(len(t)):
-            if i % 4000 == 0:
-                # print(f"Time: {t[i]:.2f}")
+            if dump == 1:
                 S.append(s)
-            s, particle_escaped = self.RungeKutta4(t[i], s, h)
+            elif i % dump == 0:
+                S.append(s)
+            if method == "RungeKutta4":
+                s, particle_escaped = self.RungeKutta4(t[i], s, h)
+            elif method == "Boris":
+                s, particle_escaped = self.Boris(t[i], s, h)
+            elif method == "LeapFrog":
+                s, particle_escaped = self.LeapFrog(t[i], s, h)
             if particle_escaped == True:
                 break
         return np.array(S)
@@ -140,3 +253,45 @@ class ParticleTracer:
         # ax.set_zlim(-5, 5)
         plt.show()
         
+def InitialVelocity(K, m):
+    v = c * np.sqrt(1 - (1/((K/(m*c**2)) + 1))**2)
+    return v
+
+def Compute_B(x, y, z):
+    """
+    Compute the magnetic field at a point (x, y, z) in the Earth's magnetic field.
+    
+    Parameters:
+        x, y, z (float): Coordinates in the Earth-centered frame.
+        
+    Returns:
+        Bx, By, Bz (float): Magnetic field components at the point (x, y, z).
+    """
+    B0 = 3.12e-5  # T
+    Re = 6378137  # Earth radius in meters
+    B0_Re3 = B0 * Re**3
+    r2 = x**2 + y**2 + z**2
+    r5 = r2**2.5
+    B_factor = -B0_Re3 / r5
+    Bx = 3 * x * z * B_factor
+    By = 3 * y * z * B_factor
+    Bz = (2 * z**2 - x**2 - y**2) * B_factor
+    return Bx, By, Bz
+
+def Compute_Vpar_Vperp(vx, vy, vz, Bx, By, Bz):
+    """
+    Compute the parallel and perpendicular components of the velocity with respect to the magnetic field.
+    
+    Parameters:
+        vx, vy, vz (float): Velocity components in the Earth-centered frame.
+        Bx, By, Bz (float): Magnetic field components in the Earth-centered frame.
+        
+    Returns:
+        v_par, v_perp (float): Parallel and perpendicular components of the velocity.
+    """
+    B_mag = np.sqrt(Bx**2 + By**2 + Bz**2)
+    v_mag = np.sqrt(vx**2 + vy**2 + vz**2)
+    v_dot_B = vx * Bx + vy * By + vz * Bz
+    v_par = v_dot_B / B_mag
+    v_perp = np.sqrt(v_mag**2 - v_par**2)
+    return v_par, v_perp
