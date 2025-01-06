@@ -51,7 +51,7 @@ class ParticleTracer:
             particle_escaped = True
         return s_new, particle_escaped
     
-    def Boris(self, t, s, h):
+    def Boris(self, t, s, h, Bfield):
         """
         Boris pusher method for advancing particle trajectories in a magnetic field,
         adapted to the provided notation.
@@ -65,22 +65,13 @@ class ParticleTracer:
         numpy.ndarray: Updated state vector
         """
         particle_escaped = False
-        t_ = 0
         # Extract position and velocity
         x_k = s[:3]  # Position: [x, y, z]
         v_k = s[3:]  # Velocity: [vx, vy, vz]
         
-        # Calculate magnetic field at the particle's position
-        r2 = x_k[0]**2 + x_k[1]**2 + x_k[2]**2
-        r5 = r2**2.5
-        B_factor = -B0_Re3 / r5 
-        # B_factor = B_factor * (1 + np.random.randint(-20, 20))
-        B_k = np.array([
-            3 * x_k[0] * x_k[2] * B_factor,
-            3 * x_k[1] * x_k[2] * B_factor,
-            (2 * x_k[2]**2 - x_k[0]**2 - x_k[1]**2) * B_factor
-        ])
-        
+        # Calculate magnetic field at the particle's position        
+        B_k = Bfield(x_k[0], x_k[1], x_k[2])
+
         # Assume no electric field (E_k = 0)
         E_k = np.zeros(3)
         
@@ -107,56 +98,24 @@ class ParticleTracer:
         if np.sqrt(x_k_plus_one[0]**2 + x_k_plus_one[1]**2 + x_k_plus_one[2]**2) > 5 * Re:
             print("Particle escaped")
             particle_escaped = True
-            
-        t_ = t_ + h
         
         # Return the updated state vector
         return np.concatenate((x_k_plus_one, v_k_plus_half)), particle_escaped
 
-    def LeapFrog(self, t, s, h):
-        particle_escaped = False
-
-        # Extract position and velocity
-        x_k = s[:3]  # Position: [x, y, z]
-        v_k = s[3:]  # Velocity: [vx, vy, vz]
-
-        r2 = x_k[0]**2 + x_k[1]**2 + x_k[2]**2
-        r5 = r2**2.5
-        B_factor = -B0_Re3 / r5
-        B_k = np.array([
-            3 * x_k[0] * x_k[2] * B_factor,
-            3 * x_k[1] * x_k[2] * B_factor,
-            (2 * x_k[2]**2 - x_k[0]**2 - x_k[1]**2) * B_factor
-        ])
-        
-        d = v_k + self.qm_ratio*(h/2)*np.cross(v_k, B_k)
-        x_k_plus_one = x_k + h*d
-        B_k_plus_one = np.array([
-            3 * x_k_plus_one[0] * x_k_plus_one[2] * B_factor,
-            3 * x_k_plus_one[1] * x_k_plus_one[2] * B_factor,
-            (2 * x_k_plus_one[2]**2 - x_k_plus_one[0]**2 - x_k_plus_one[1]**2) * B_factor
-        ])
-        
-        v_k_plus_one = (1/(1 + (self.qm_ratio*h/2)**2 * np.dot(B_k_plus_one, B_k_plus_one))) * (d + self.qm_ratio*(h/2)*np.cross(d, B_k_plus_one) + (self.qm_ratio*h/2)**2 * np.dot(d, B_k_plus_one)*B_k_plus_one)
- 
-        if np.sqrt(x_k_plus_one[0]**2 + x_k_plus_one[1]**2 + x_k_plus_one[2]**2) > 5*Re:
-            print("Particle escaped")
-            particle_escaped = True
-            
-        return np.concatenate((x_k_plus_one, v_k_plus_one)), particle_escaped       
-        
-        
-
-    def solve(self, s0, t_span, method, h, dump=4000):
+    def solve(self, s0, t_span, method, h, Bfield=None, dump=1):
         """
         Solve the system of differential equations using the specified method.
         
         Parameters:
             s0 (numpy array): Initial state [x, y, z, vx, vy, vz]
             t_span (list): Time span [t0, tf]
-            method (str): "RungeKutta4", "Boris", "LeapFrog"
+            method (str): "RK4", "Boris"
             h (float): Time step
+            Bfield (function): Function that returns the magnetic field at a point (x, y, z), as an array [Bx, By, Bz]. Required for Boris method.
             dump (int): Number of steps to skip between saved states
+            
+        Returns:
+            numpy array: Array of states [x, y, z, vx, vy, vz] at each time step.
         """
         t0, tf = t_span
         t = np.arange(t0, tf, h)
@@ -167,12 +126,10 @@ class ParticleTracer:
                 S.append(s)
             elif i % dump == 0:
                 S.append(s)
-            if method == "RungeKutta4":
+            if method == "RK4":
                 s, particle_escaped = self.RungeKutta4(t[i], s, h)
             elif method == "Boris":
-                s, particle_escaped = self.Boris(t[i], s, h)
-            elif method == "LeapFrog":
-                s, particle_escaped = self.LeapFrog(t[i], s, h)
+                s, particle_escaped = self.Boris(t[i], s, h, Bfield)
             if particle_escaped == True:
                 break
         return np.array(S)
@@ -226,7 +183,7 @@ class ParticleTracer:
         writer.Write()
         print(f"Saved trajectory with velocity to {self.filename}_velocity.vtk")
     
-    def save_to_html(self, x, y, z):
+    def save_to_html(self, x, y, z, filename):
         fig = go.Figure()
         fig.add_trace(go.Scatter3d(x = x, y = y, z = z, mode='lines', name='Trajectory'))
         fig.update_layout(title='Proton trajectory', scene=dict(aspectmode='cube'), scene_aspectmode='cube')
@@ -238,24 +195,36 @@ class ParticleTracer:
         y_ = np.outer(np.sin(u), np.sin(v))
         z_ = np.outer(np.ones(np.size(u)), np.cos(v))
         fig.add_trace(go.Surface(x=x_, y=y_, z=z_, colorscale='earth', showscale=False))
-        fig.write_html(f"{self.filename}.html")
+        fig.write_html(filename)
     
-    def plot(self, S):
+    def plot(self, S, **kwargs):
         fig = plt.figure()
         ax = fig.add_subplot(111, projection='3d')
         # plot each 100 point
-        ax.plot(S[:,0], S[:,1], S[:,2])
+        ax.plot(S[:,0]/Re, S[:,1]/Re, S[:,2]/Re)
         ax.set_xlabel(r'X/R$_e$')
         ax.set_ylabel(r'Y/R$_e$')
         ax.set_zlabel(r'Z/R$_e$')
-        # ax.set_xlim(-5, 5)
-        # ax.set_ylim(-5, 5)
-        # ax.set_zlim(-5, 5)
+        # add planet
+        u = np.linspace(0, 2 * np.pi, 100)
+        v = np.linspace(0, np.pi, 100)
+        x = np.outer(np.cos(u), np.sin(v))
+        y = np.outer(np.sin(u), np.sin(v))
+        z = np.outer(np.ones(np.size(u)), np.cos(v))
+        ax.plot_surface(x, y, z, color='b')
+        ax.set_title(kwargs.get('title', 'Particle trajectory'))
+        ax.set_xlim(kwargs.get('xlim', [-5, 5]))
+        ax.set_ylim(kwargs.get('ylim', [-5, 5]))
+        ax.set_zlim(kwargs.get('zlim', [-5, 5]))
         plt.show()
         
 def InitialVelocity(K, m):
     v = c * np.sqrt(1 - (1/((K/(m*c**2)) + 1))**2)
     return v
+
+def InitialEnergy(v, m):
+    K = m * c**2 * ((1/np.sqrt(1 - (v/c)**2)) - 1)
+    return K
 
 def Compute_B(x, y, z):
     """
@@ -267,7 +236,7 @@ def Compute_B(x, y, z):
     Returns:
         Bx, By, Bz (float): Magnetic field components at the point (x, y, z).
     """
-    B0 = 3.12e-5  # T
+    B0 = 3.07e-5  # T
     Re = 6378137  # Earth radius in meters
     B0_Re3 = B0 * Re**3
     r2 = x**2 + y**2 + z**2
@@ -276,7 +245,7 @@ def Compute_B(x, y, z):
     Bx = 3 * x * z * B_factor
     By = 3 * y * z * B_factor
     Bz = (2 * z**2 - x**2 - y**2) * B_factor
-    return Bx, By, Bz
+    return np.array([Bx, By, Bz])
 
 def Compute_Vpar_Vperp(vx, vy, vz, Bx, By, Bz):
     """
