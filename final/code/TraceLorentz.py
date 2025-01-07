@@ -22,16 +22,16 @@ if species == "proton":
     m = m_p
     q_sign = 1  # Positive charge
     qm_ratio = (q_sign*e) / m  # Charge-to-mass ratio
-    filename = "Lorentz/protons/proton_trajectory"
-    if not os.path.exists("Lorentz/protons"):
-        os.makedirs("Lorentz/protons")
+    filename = "Lorentz/proton/proton_trajectory"
+    if not os.path.exists("Lorentz/proton"):
+        os.makedirs("Lorentz/proton")
 elif species == "electron":
     m = m_e
     q_sign = -1
     qm_ratio = (q_sign*e) / m
-    filename = "Lorentz/electrons/electron_trajectory"
-    if not os.path.exists("Lorentz/electrons"):
-        os.makedirs("Lorentz/electrons")
+    filename = "Lorentz/electron/electron_trajectory"
+    if not os.path.exists("Lorentz/electron"):
+        os.makedirs("Lorentz/electron")
     
 # Lorentz System
 def lorentz_force(t, s):
@@ -70,14 +70,14 @@ print(f"K = {K/e:.1e} eV")
 x0, y0, z0 = 4 * Re, 0, 0
 
 # Initial velocity
-pitch_angle = 90. # degrees
+pitch_angle = 45. # degrees
 vx0, vy0, vz0 = 0, v_mod * np.sin(np.radians(pitch_angle)), v_mod * np.cos(np.radians(pitch_angle))
 
 # Initial conditions
 initial_conditions = [x0, y0, z0, vx0, vy0, vz0]
 
 dump = 1
-t_span = [0, 1]
+t_span = [0, 20]
 dt = 1e-4
 
 # Solve the system using the Runge-Kutta 4th order method
