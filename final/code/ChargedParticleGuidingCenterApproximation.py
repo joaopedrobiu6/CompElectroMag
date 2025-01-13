@@ -11,7 +11,7 @@ B0 = 3.07e-5  # Tesla
 Re = 6378137  # meter (Earth radius)
 
 # Particle species
-species = "electron"
+species = "proton"
 if species == "proton":
     m = m_p
     q_sign = 1  # Positive charge
@@ -34,7 +34,7 @@ elif species == "electron":
 K = 1e7 * e  # Kinetic energy in Joules
 v_mod = v_mod = InitialVelocity(K, m)
 
-pitch_angle = 15  # degrees
+pitch_angle = 45  # degrees
 v_par0 = v_mod * np.cos(np.radians(pitch_angle))  # Parallel velocity
 
 # Magnetic field computation
@@ -99,8 +99,8 @@ z0 = 0
 initial_conditions = [x0, y0, z0, v_par0]
 
 # Time span
-tfin = 200  # seconds
-dt = 0.01
+tfin = 120  # seconds
+dt = 0.001
 time = np.arange(0, tfin, dt)
 
 # Solve the ODE
@@ -150,7 +150,7 @@ def save_to_html(x, y, z, filename):
     fig = go.Figure()
     fig.add_trace(go.Scatter3d(x = x, y = y, z = z, mode='lines', name='Trajectory'))
     fig.update_layout(title='Proton trajectory', scene=dict(aspectmode='cube'), scene_aspectmode='cube')
-    fig.update_layout(scene=dict(xaxis_title='X', yaxis_title='Y', zaxis_title='Z'))
+    fig.update_layout(scene=dict(xaxis_title='X/R_E', yaxis_title='Y/R_E', zaxis_title='Z/R_E'))
     fig.update_layout(scene=dict(xaxis=dict(range=[-5, 5]), yaxis=dict(range=[-5, 5]), zaxis=dict(range=[-5, 5])))
     u = np.linspace(0, 2 * np.pi, 100)
     v = np.linspace(0, np.pi, 100)

@@ -17,7 +17,7 @@ c2 = c**2                           # Speed of light squared
 method = "Boris"
 
 # Particle species
-species = "electron"
+species = "proton"
 if species == "proton":
     m = m_p
     q_sign = 1  # Positive charge
@@ -77,8 +77,8 @@ vx0, vy0, vz0 = 0, v_mod * np.sin(np.radians(pitch_angle)), v_mod * np.cos(np.ra
 initial_conditions = [x0, y0, z0, vx0, vy0, vz0]
 
 dump = 1
-t_span = [0, 20]
-dt = 1e-4
+t_span = [0, 40]
+dt = 1e-3
 
 # Solve the system using the Runge-Kutta 4th order method
 S = tracer.solve(initial_conditions, t_span, method, dt, Bfield=Compute_B, dump=dump)
